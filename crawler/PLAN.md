@@ -27,8 +27,8 @@ crawler/
     types.ts           # BoardConfig, NoticeListItem, NoticeDetail 타입
     fetchList.ts        # 목록 페이지 요청 + cheerio 파싱 + 페이지네이션
     fetchDetail.ts       # 상세 페이지 요청 + 본문/메타데이터 파싱
-    summarize.ts         # OpenRouter LLM 호출 → 요약 + 키워드 생성
-    supabaseClient.ts    # Supabase 클라이언트 (service role key)
+    summarize.ts         # Gemini API 호출 → 요약 + 키워드 생성
+    supabaseClient.ts    # Supabase 클라이언트 (publishable key)
     index.ts             # 메인 루프: boards.json 순회 → 목록 → 상세 → 요약 → upsert
 
 supabase/
@@ -43,9 +43,9 @@ supabase/
 2. 게시판별로 목록 페이지 1페이지(기본값, 설정 가능)를 가져와 `nttId` 목록 추출
 3. 각 `nttId`에 대해 Supabase에 이미 저장된 글(`board_id` + `ntt_id` unique)인지 확인 → 있으면 건너뜀 (중복 크롤링 방지)
 4. 새 글이면 상세 페이지를 가져와 제목/본문/작성자/작성일 파싱
-5. 본문을 OpenRouter LLM(`google/gemma-4-31b-it:free`)에 보내 요약 + 핵심 키워드(3~5개) 생성
-   - 응답은 JSON 형식으로 강제 요청 (`{"summary": "...", "keywords": ["...", ...]}`)
-   - 파싱 실패 시 요약은 본문 앞부분으로 대체, 키워드는 빈 배열 (LLM 실패가 전체 파이프라인을 막지 않도록)
+5. 본문을 Gemini API(`gemini-3.5-flash`, `@google/genai` SDK)에 보내 요약 + 핵심 키워드(3~5개) 생성
+   - `response_format`(mime_type: application/json + schema)으로 응답 형식을 강제
+   - 응답 없음 또는 파싱 실패 시 요약은 본문 앞부분으로 대체, 키워드는 빈 배열 (LLM 실패가 전체 파이프라인을 막지 않도록)
 6. Supabase `notices` 테이블에 upsert (`onConflict: board_id,ntt_id`)
 7. 게시판 하나가 실패해도 나머지 게시판은 계속 진행 (게시판 단위 try/catch)
 
@@ -54,8 +54,8 @@ supabase/
 
 ## 인증/키 관리
 - `.env`(로컬)와 GitHub Actions Secrets(배포)에 다음 값 필요:
-  - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (RLS 우회하고 서버에서만 쓰는 키 — 절대 클라이언트/`VITE_` 접두사로 노출 금지)
-  - `OPENROUTER_API_KEY` (서버 사이드 전용, 기존 챗봇의 `VITE_OPENROUTER_API_KEY`와는 별도 변수로 관리 — 프론트엔드 번들에 섞이지 않도록)
+  - `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` (RLS를 통과해야 쓰기 가능 — `supabase/schema.sql`에 anon insert/update 정책 추가함. 공개해도 안전하도록 설계된 키라 노출 자체는 문제 없지만, 정책상 이 키를 아는 누구나 notices에 쓸 수 있다는 점은 인지할 것)
+  - `GEMINI_API_KEY` (Google AI Studio 발급 키 — `@google/genai` SDK가 자동으로 읽음. 프론트엔드 챗봇의 `VITE_OPENROUTER_API_KEY`와는 별개 프로바이더/변수)
 
 ## 실행 방식
 - 로컬: `npm run crawl`

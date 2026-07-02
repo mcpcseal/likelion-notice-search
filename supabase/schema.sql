@@ -24,3 +24,17 @@ alter table notices enable row level security;
 create policy "notices are publicly readable"
   on notices for select
   using (true);
+
+-- 크롤러가 퍼블리셔블 키(anon role)로 쓰기 때문에 insert/update를 허용한다.
+-- 주의: 퍼블리셔블 키는 공개해도 안전하도록 설계된 키라, 이 정책은 키를 아는 누구나
+-- notices 테이블에 쓸 수 있게 만든다. 더 안전하게 하려면 시크릿 키(서비스 롤) 사용을 권장.
+create policy "anon can insert notices"
+  on notices for insert
+  to anon
+  with check (true);
+
+create policy "anon can update notices"
+  on notices for update
+  to anon
+  using (true)
+  with check (true);
