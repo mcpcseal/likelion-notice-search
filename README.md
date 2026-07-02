@@ -2,20 +2,21 @@
 
 두 개의 독립적인 기능을 담은 프로젝트입니다.
 
-1. **공지사항 검색 프론트엔드** — 크롤링된 공지사항을 자연어 한 줄 질문으로 검색하는 Vite + React + TypeScript + Tailwind CSS 앱 (Gemini 활용)
+1. **공지사항 검색 챗봇** — 크롤링된 공지사항을 자연어 대화로 검색하는 Vite + React + TypeScript + Tailwind CSS 앱 (Gemini 활용)
 2. **공지사항 크롤러** — 학교 홈페이지 공지사항 게시판을 순회하며 크롤링해 요약·키워드와 함께 Supabase에 저장하는 스크립트
 
 ## 프로젝트 구조
 
 ```
 likelion-idea/
-├── src/                      # 검색 프론트엔드 (Vite + React + TS + Tailwind)
+├── src/                      # 검색 챗봇 프론트엔드 (Vite + React + TS + Tailwind)
 │   ├── App.tsx                 # 페이지 셸
-│   ├── NoticeSearch.tsx        # 검색 입력 + 답변 + 결과 카드 UI
+│   ├── Chatbot.tsx              # 대화형 챗봇 UI (실제 사용되는 메인 화면)
+│   ├── NoticeSearch.tsx        # 단발 질문형 검색 UI (레거시, 현재 App에서 미사용)
 │   ├── lib/
 │   │   ├── geminiClient.ts       # 프론트엔드용 Gemini 클라이언트
 │   │   ├── supabaseClient.ts     # 프론트엔드용 Supabase 클라이언트 (publishable key)
-│   │   └── notices.ts            # 키워드 추출 → 검색 → 답변 합성 로직
+│   │   └── notices.ts            # 키워드 추출 → 관련성 기반 검색 → 답변 합성 로직
 │   ├── main.tsx
 │   ├── index.css               # Tailwind 진입점 + 브랜드 컬러(#d81921) 테마
 │   └── vite-env.d.ts           # import.meta.env 타입 선언
@@ -44,10 +45,11 @@ likelion-idea/
 └── package.json
 ```
 
-## 1. 공지사항 검색 프론트엔드
+## 1. 공지사항 검색 챗봇
 
 - **스택**: Vite + React + TypeScript + Tailwind CSS v4 (브랜드 컬러 `#d81921`)
-- **동작**: 한 줄 질문 입력 → (1) Gemini로 검색 키워드 추출 → (2) Supabase `notices` 테이블에서 제목/요약 매칭 검색 → (3) Gemini가 검색 결과를 근거로 자연어 답변 생성 → 답변 + 관련 공지사항 카드 목록 표시
+- **동작**: 대화형 입력 → (1) Gemini로 이전 대화 맥락을 반영해 검색 키워드 추출 → (2) Supabase `notices` 테이블에서 제목/요약 매칭 검색 후 매칭 키워드 길이 기준 관련성 순으로 재정렬 → (3) Gemini가 검색 결과를 근거로 200자 이내 자연어 답변 생성(문장 단위로 자연스럽게 truncate) → 답변 + 관련 공지사항 카드(상위 3개, 더보기로 확장) 표시
+- **UX 세부사항**: 입력창에서 ↑/↓로 이전에 보낸 메시지 재입력 가능, 에러 발생 시 사용자에게는 안내 메시지만 노출하고 실제 에러는 브라우저 콘솔에 기록
 - **실행**:
   ```bash
   npm install
@@ -59,7 +61,7 @@ likelion-idea/
 
 - **스택**: Node.js + TypeScript, `tsx`로 직접 실행 (별도 빌드 없음)
 - **대상 사이트**: eGovFrame 기반 게시판 (예: 서울예술대학교 공지사항). `crawler/config/boards.json`에 게시판을 추가하면 여러 게시판으로 확장 가능
-- **처리 흐름**: 게시판별 목록 조회 → 이미 저장된 글 스킵(중복 방지) → 상세 페이지 파싱 → Gemini API(`gemini-3.5-flash`)로 요약·키워드 생성 → Supabase `notices` 테이블에 upsert
+- **처리 흐름**: 게시판별 목록 조회 → 이미 저장된 글 스킵(중복 방지) → 상세 페이지 파싱 → Gemini API(`gemini-2.5-flash-lite`)로 요약·키워드 생성 → Supabase `notices` 테이블에 upsert
 - **저장 방식**: Supabase publishable key로 접속하며, `supabase/schema.sql`에 anon insert/update RLS 정책이 포함되어 있음
 - **실행**:
   ```bash
