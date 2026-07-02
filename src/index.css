@@ -1,0 +1,11 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-brand: #d81921;
+  --color-brand-hover: #b31017;
+  --color-brand-soft: #fdeceb;
+}
+
+body {
+  @apply bg-neutral-100 text-neutral-900;
+}

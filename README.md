@@ -2,17 +2,23 @@
 
 두 개의 독립적인 기능을 담은 프로젝트입니다.
 
-1. **Gemma 챗봇** — OpenRouter의 `google/gemma-4-31b-it:free` 모델을 사용하는 Vite + React + TypeScript 챗봇 뼈대
+1. **공지사항 검색 프론트엔드** — 크롤링된 공지사항을 자연어 한 줄 질문으로 검색하는 Vite + React + TypeScript + Tailwind CSS 앱 (Gemini 활용)
 2. **공지사항 크롤러** — 학교 홈페이지 공지사항 게시판을 순회하며 크롤링해 요약·키워드와 함께 Supabase에 저장하는 스크립트
 
 ## 프로젝트 구조
 
 ```
 likelion-idea/
-├── src/                      # 챗봇 프론트엔드 (Vite + React + TS)
-│   ├── App.tsx                # 채팅 UI + OpenRouter 호출 (429 재시도 포함)
+├── src/                      # 검색 프론트엔드 (Vite + React + TS + Tailwind)
+│   ├── App.tsx                 # 페이지 셸
+│   ├── NoticeSearch.tsx        # 검색 입력 + 답변 + 결과 카드 UI
+│   ├── lib/
+│   │   ├── geminiClient.ts       # 프론트엔드용 Gemini 클라이언트
+│   │   ├── supabaseClient.ts     # 프론트엔드용 Supabase 클라이언트 (publishable key)
+│   │   └── notices.ts            # 키워드 추출 → 검색 → 답변 합성 로직
 │   ├── main.tsx
-│   └── vite-env.d.ts          # import.meta.env 타입 선언
+│   ├── index.css               # Tailwind 진입점 + 브랜드 컬러(#d81921) 테마
+│   └── vite-env.d.ts           # import.meta.env 타입 선언
 ├── index.html
 │
 ├── crawler/                  # 공지사항 크롤러 (Node + TS 스크립트)
@@ -38,17 +44,16 @@ likelion-idea/
 └── package.json
 ```
 
-## 1. Gemma 챗봇
+## 1. 공지사항 검색 프론트엔드
 
-- **스택**: Vite + React + TypeScript, 스타일링 없음 (뼈대만)
-- **모델**: OpenRouter `google/gemma-4-31b-it:free`
-- **동작**: 메시지 입력 → OpenRouter `/chat/completions` 직접 호출 → 응답 표시. 무료 티어 업스트림 혼잡(429) 대응을 위해 자동 재시도(지수 백오프) 포함
+- **스택**: Vite + React + TypeScript + Tailwind CSS v4 (브랜드 컬러 `#d81921`)
+- **동작**: 한 줄 질문 입력 → (1) Gemini로 검색 키워드 추출 → (2) Supabase `notices` 테이블에서 제목/요약 매칭 검색 → (3) Gemini가 검색 결과를 근거로 자연어 답변 생성 → 답변 + 관련 공지사항 카드 목록 표시
 - **실행**:
   ```bash
   npm install
   npm run dev
   ```
-- **필요 환경변수**: `.env`의 `VITE_OPENROUTER_API_KEY` (브라우저 번들에 포함되므로 프로토타입/학습용으로만 사용 — 프로덕션에서는 서버로 옮길 것)
+- **필요 환경변수**: `.env`의 `VITE_GEMINI_API_KEY`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` (모두 VITE_ 접두사라 브라우저 번들에 포함됨 — Supabase publishable key는 공개돼도 안전하도록 설계된 키지만, Gemini 키는 일반 API 키이므로 프로토타입/학습용으로만 사용할 것)
 
 ## 2. 공지사항 크롤러
 
@@ -71,8 +76,8 @@ likelion-idea/
 
 | 명령 | 설명 |
 | --- | --- |
-| `npm run dev` | 챗봇 개발 서버 실행 |
-| `npm run build` | 챗봇 프로덕션 빌드 |
+| `npm run dev` | 검색 프론트엔드 개발 서버 실행 |
+| `npm run build` | 프론트엔드 프로덕션 빌드 |
 | `npm run lint` | oxlint 전체 검사 |
 | `npm run crawl` | 크롤러 1회 실행 |
 | `npm run typecheck:crawler` | 크롤러 타입 체크 |
