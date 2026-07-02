@@ -1,0 +1,10 @@
+[
+  {
+    "id": "seoularts-notice",
+    "name": "서울예술대학교 공지사항",
+    "baseUrl": "https://www.seoularts.ac.kr",
+    "bbsId": "BBSMSTR_000000000651",
+    "listPath": "/web/cop/bbsWeb/selectBoardList.do",
+    "detailPath": "/web/cop/bbsWeb/selectBoardDetail.do"
+  }
+]
