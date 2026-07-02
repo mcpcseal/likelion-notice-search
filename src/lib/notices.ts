@@ -64,6 +64,8 @@ async function findNotices(keywords: string[]): Promise<Notice[]> {
   return data ?? []
 }
 
+const ANSWER_MAX_LENGTH = 200
+
 async function synthesizeAnswer(query: string, notices: Notice[]): Promise<string> {
   if (notices.length === 0) return '관련된 공지사항을 찾지 못했습니다.'
 
@@ -73,10 +75,11 @@ async function synthesizeAnswer(query: string, notices: Notice[]): Promise<strin
 
   const response = await gemini.models.generateContent({
     model: GEMINI_MODEL,
-    contents: `다음은 검색된 학교 공지사항 목록이다. 사용자 질문에 이 목록을 근거로 한국어로 간결하게 답하라. 목록에 없는 내용은 지어내지 마라. 마크다운 문법(**, *, #, - 등)은 절대 쓰지 말고 순수 텍스트로만 답하라.\n\n질문: ${query}\n\n공지사항 목록:\n${context}`,
+    contents: `다음은 검색된 학교 공지사항 목록이다. 사용자 질문에 이 목록을 근거로 한국어로 답하라. 목록에 없는 내용은 지어내지 마라. 마크다운 문법(**, *, #, - 등)은 절대 쓰지 말고 순수 텍스트로만 답하라. 반드시 공백 포함 ${ANSWER_MAX_LENGTH}자 이내로 답하라.\n\n질문: ${query}\n\n공지사항 목록:\n${context}`,
   })
 
-  return response.text ?? '답변을 생성하지 못했습니다.'
+  const answer = response.text ?? '답변을 생성하지 못했습니다.'
+  return answer.length > ANSWER_MAX_LENGTH ? `${answer.slice(0, ANSWER_MAX_LENGTH - 1)}…` : answer
 }
 
 export async function searchNotices(query: string): Promise<{ answer: string; notices: Notice[] }> {
