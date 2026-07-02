@@ -1,7 +1,7 @@
 import { GoogleGenAI, Type } from '@google/genai'
 import type { Summary } from './types.ts'
 
-const MODEL = 'gemini-3.5-flash'
+const MODEL = 'gemini-2.5-flash-lite'
 
 const client = new GoogleGenAI({})
 
