@@ -22,7 +22,8 @@ function NoticeSearch() {
       setAnswer(answer)
       setResults(notices)
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      console.error(err)
+      setError('죄송합니다. 에러가 발생했습니다.')
     } finally {
       setLoading(false)
     }
@@ -54,7 +55,7 @@ function NoticeSearch() {
         </button>
       </div>
 
-      {error && <p className="text-sm text-brand-hover">에러: {error}</p>}
+      {error && <p className="text-sm text-brand-hover">{error}</p>}
 
       {answer && (
         <p className="rounded-lg border-l-4 border-brand bg-brand-soft px-4 py-3.5 text-sm leading-relaxed text-neutral-900">

@@ -63,6 +63,16 @@ function sanitizeForFilter(keyword: string): string {
   return keyword.replace(/[,()%]/g, ' ').trim()
 }
 
+const CANDIDATE_LIMIT = 100
+const RESULT_LIMIT = 10
+
+// 매칭된 키워드의 글자 수 합으로 관련성을 계산한다. "공지"처럼 짧고 흔한
+// 키워드가 "학생회비"처럼 길고 구체적인 키워드의 신호를 덮어버리는 것을 방지하기 위함.
+function relevanceScore(notice: Notice, terms: string[]): number {
+  const haystack = `${notice.title} ${notice.summary ?? ''}`.toLowerCase()
+  return terms.reduce((score, term) => (haystack.includes(term.toLowerCase()) ? score + term.length : score), 0)
+}
+
 async function findNotices(keywords: string[]): Promise<Notice[]> {
   const terms = keywords.map(sanitizeForFilter).filter(Boolean)
   if (terms.length === 0) return []
@@ -74,16 +84,40 @@ async function findNotices(keywords: string[]): Promise<Notice[]> {
     .select('id, board_id, board_name, ntt_id, url, title, summary, keywords, author, published_at')
     .or(orFilter)
     .order('published_at', { ascending: false })
-    .limit(10)
+    .limit(CANDIDATE_LIMIT)
 
   if (error) throw new Error(error.message)
-  return data ?? []
+
+  return (data ?? [])
+    .map((notice) => ({ notice, score: relevanceScore(notice, terms) }))
+    .sort((a, b) => b.score - a.score || (b.notice.published_at ?? '').localeCompare(a.notice.published_at ?? ''))
+    .slice(0, RESULT_LIMIT)
+    .map(({ notice }) => notice)
 }
 
 const ANSWER_MAX_LENGTH = 200
 
-async function synthesizeAnswer(history: ChatTurn[], query: string, notices: Notice[]): Promise<string> {
-  if (notices.length === 0) return '관련된 공지사항을 찾지 못했습니다. 다른 키워드로 다시 물어봐 주세요.'
+// 글자 수를 넘으면 마지막 온전한 문장(마침표/물음표/느낌표 기준)까지만 남긴다.
+// 문장 경계를 못 찾으면 마지막 공백에서 자르고 말줄임표를 붙인다.
+function truncateToSentence(text: string, maxLength: number): string {
+  if (text.length <= maxLength) return text
+
+  const truncated = text.slice(0, maxLength)
+  const lastSentenceEnd = Math.max(truncated.lastIndexOf('.'), truncated.lastIndexOf('!'), truncated.lastIndexOf('?'))
+  if (lastSentenceEnd > 0) return truncated.slice(0, lastSentenceEnd + 1)
+
+  const lastSpace = truncated.lastIndexOf(' ')
+  return lastSpace > 0 ? `${truncated.slice(0, lastSpace)}…` : `${truncated}…`
+}
+
+async function synthesizeAnswer(
+  history: ChatTurn[],
+  query: string,
+  notices: Notice[],
+): Promise<{ answer: string; found: boolean }> {
+  if (notices.length === 0) {
+    return { answer: '관련된 공지사항을 찾지 못했습니다. 다른 키워드로 다시 물어봐 주세요.', found: false }
+  }
 
   const context = notices
     .map((n, i) => `${i + 1}. [${n.published_at ?? '날짜 미상'}] ${n.title}\n요약: ${n.summary ?? '(요약 없음)'}`)
@@ -92,11 +126,32 @@ async function synthesizeAnswer(history: ChatTurn[], query: string, notices: Not
   const conversation = formatHistory(history)
   const response = await gemini.models.generateContent({
     model: GEMINI_MODEL,
-    contents: `너는 학교 공지사항 검색 챗봇이다. 검색된 공지사항 목록을 근거로 사용자의 마지막 질문에 한국어로 답하라. 목록에 없는 내용은 지어내지 마라. 마크다운 문법(**, *, #, - 등)은 절대 쓰지 말고 순수 텍스트로만 답하라. 반드시 공백 포함 ${ANSWER_MAX_LENGTH}자 이내로 답하라.\n\n${conversation ? `이전 대화:\n${conversation}\n\n` : ''}마지막 질문: ${query}\n\n공지사항 목록:\n${context}`,
+    contents: `너는 학교 공지사항 검색 챗봇이다. 검색된 공지사항 목록을 근거로 사용자의 마지막 질문에 한국어로 답하라. 목록에 없는 내용은 지어내지 마라. 마크다운 문법(**, *, #, - 등)은 절대 쓰지 말고 순수 텍스트로만 답하라. 반드시 공백 포함 ${ANSWER_MAX_LENGTH}자 이내로 답하라.\n\n목록의 공지사항 중 질문과 실제로 관련된 것이 하나도 없다면 found를 false로 하고, 관련 공지사항을 찾지 못했다는 취지로 answer를 작성하라. 관련된 것이 있으면 found를 true로 하라.\n\n${conversation ? `이전 대화:\n${conversation}\n\n` : ''}마지막 질문: ${query}\n\n공지사항 목록:\n${context}`,
+    config: {
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          found: { type: Type.BOOLEAN },
+          answer: { type: Type.STRING },
+        },
+        required: ['found', 'answer'],
+      },
+    },
   })
 
-  const answer = response.text ?? '답변을 생성하지 못했습니다.'
-  return answer.length > ANSWER_MAX_LENGTH ? `${answer.slice(0, ANSWER_MAX_LENGTH - 1)}…` : answer
+  if (!response.text) return { answer: '답변을 생성하지 못했습니다.', found: false }
+
+  let parsed: { found?: unknown; answer?: unknown }
+  try {
+    parsed = JSON.parse(response.text)
+  } catch {
+    return { answer: '답변을 생성하지 못했습니다.', found: false }
+  }
+
+  const answer = typeof parsed.answer === 'string' ? parsed.answer : '답변을 생성하지 못했습니다.'
+  const found = parsed.found === true
+  return { answer: truncateToSentence(answer, ANSWER_MAX_LENGTH), found }
 }
 
 export async function chatWithNotices(
@@ -105,8 +160,8 @@ export async function chatWithNotices(
 ): Promise<{ answer: string; notices: Notice[] }> {
   const keywords = await extractKeywords(history, query)
   const notices = await findNotices(keywords)
-  const answer = await synthesizeAnswer(history, query, notices)
-  return { answer, notices }
+  const { answer, found } = await synthesizeAnswer(history, query, notices)
+  return { answer, notices: found ? notices : [] }
 }
 
 // 기존 단발 검색 API (NoticeSearch.tsx 호환용)
