@@ -95,20 +95,8 @@ async function findNotices(keywords: string[]): Promise<Notice[]> {
     .map(({ notice }) => notice)
 }
 
-const ANSWER_MAX_LENGTH = 200
-
-// 글자 수를 넘으면 마지막 온전한 문장(마침표/물음표/느낌표 기준)까지만 남긴다.
-// 문장 경계를 못 찾으면 마지막 공백에서 자르고 말줄임표를 붙인다.
-function truncateToSentence(text: string, maxLength: number): string {
-  if (text.length <= maxLength) return text
-
-  const truncated = text.slice(0, maxLength)
-  const lastSentenceEnd = Math.max(truncated.lastIndexOf('.'), truncated.lastIndexOf('!'), truncated.lastIndexOf('?'))
-  if (lastSentenceEnd > 0) return truncated.slice(0, lastSentenceEnd + 1)
-
-  const lastSpace = truncated.lastIndexOf(' ')
-  return lastSpace > 0 ? `${truncated.slice(0, lastSpace)}…` : `${truncated}…`
-}
+// 프롬프트에 지시하는 목표 답변 길이 (모델이 이 안에서 답하도록 유도)
+const ANSWER_TARGET_LENGTH = 50
 
 async function synthesizeAnswer(
   history: ChatTurn[],
@@ -126,7 +114,7 @@ async function synthesizeAnswer(
   const conversation = formatHistory(history)
   const response = await gemini.models.generateContent({
     model: GEMINI_MODEL,
-    contents: `너는 학교 공지사항 검색 챗봇이다. 검색된 공지사항 목록을 근거로 사용자의 마지막 질문에 한국어로 답하라. 목록에 없는 내용은 지어내지 마라. 마크다운 문법(**, *, #, - 등)은 절대 쓰지 말고 순수 텍스트로만 답하라. 반드시 공백 포함 ${ANSWER_MAX_LENGTH}자 이내로 답하라.\n\n목록의 공지사항 중 질문과 실제로 관련된 것이 하나도 없다면 found를 false로 하고, 관련 공지사항을 찾지 못했다는 취지로 answer를 작성하라. 관련된 것이 있으면 found를 true로 하라.\n\n${conversation ? `이전 대화:\n${conversation}\n\n` : ''}마지막 질문: ${query}\n\n공지사항 목록:\n${context}`,
+    contents: `너는 학교 공지사항 검색 챗봇이다. 검색된 공지사항 목록을 근거로 사용자의 마지막 질문에 한국어로 답하라. 목록에 없는 내용은 지어내지 마라. 마크다운 문법(**, *, #, - 등)은 절대 쓰지 말고 순수 텍스트로만 답하라. 반드시 공백 포함 ${ANSWER_TARGET_LENGTH}자 미만으로 답하라. 관련된 공지가 2건 이상이면 절대 나열하지 말고, 대표 제목 1개만 언급한 뒤 "○○ 등 N건이 있습니다" 형식으로만 답하라. (예: "전시 안내 등 3건이 있습니다.")\n\n목록의 공지사항 중 질문과 실제로 관련된 것이 하나도 없다면 found를 false로 하고, 관련 공지사항을 찾지 못했다는 취지로 answer를 작성하라. 관련된 것이 있으면 found를 true로 하라.\n\n${conversation ? `이전 대화:\n${conversation}\n\n` : ''}마지막 질문: ${query}\n\n공지사항 목록:\n${context}`,
     config: {
       responseMimeType: 'application/json',
       responseSchema: {
@@ -151,7 +139,7 @@ async function synthesizeAnswer(
 
   const answer = typeof parsed.answer === 'string' ? parsed.answer : '답변을 생성하지 못했습니다.'
   const found = parsed.found === true
-  return { answer: truncateToSentence(answer, ANSWER_MAX_LENGTH), found }
+  return { answer, found }
 }
 
 export async function chatWithNotices(

@@ -6,5 +6,21 @@
     "bbsId": "BBSMSTR_000000000651",
     "listPath": "/web/cop/bbsWeb/selectBoardList.do",
     "detailPath": "/web/cop/bbsWeb/selectBoardDetail.do"
+  },
+  {
+    "id": "seoularts-contest-job",
+    "name": "서울예술대학교 공모전·모집·취업",
+    "baseUrl": "https://www.seoularts.ac.kr",
+    "bbsId": "BBSMSTR_000000000722",
+    "listPath": "/web/cop/bbsWeb/selectBoardList.do",
+    "detailPath": "/web/cop/bbsWeb/selectBoardDetail.do"
+  },
+  {
+    "id": "seoularts-performance-exhibition",
+    "name": "서울예술대학교 공연 및 전시 안내",
+    "baseUrl": "https://www.seoularts.ac.kr",
+    "bbsId": "BBSMSTR_000000000629",
+    "listPath": "/web/cop/bbsWeb/selectBoardList.do",
+    "detailPath": "/web/cop/bbsWeb/selectBoardDetail.do"
   }
 ]
