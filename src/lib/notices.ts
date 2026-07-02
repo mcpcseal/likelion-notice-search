@@ -30,31 +30,38 @@ function formatHistory(history: ChatTurn[]): string {
     .join('\n')
 }
 
-async function extractKeywords(history: ChatTurn[], query: string): Promise<string[]> {
+type QueryAnalysis = {
+  keywords: string[]
+  recency: boolean
+}
+
+async function analyzeQuery(history: ChatTurn[], query: string): Promise<QueryAnalysis> {
   const conversation = formatHistory(history)
   const response = await gemini.models.generateContent({
     model: GEMINI_MODEL,
-    contents: `학교 공지사항 게시판을 검색하는 챗봇의 대화다. 사용자의 마지막 질문을 검색할 핵심 키워드를 1~5개 한국어로 뽑아라. 마지막 질문이 이전 대화를 가리키면(예: "그거 언제까지야?") 이전 대화에서 주제를 찾아 키워드에 반영하라.\n\n${conversation ? `이전 대화:\n${conversation}\n\n` : ''}마지막 질문: ${query}`,
+    contents: `공지사항 검색 챗봇이다. 마지막 질문에서 keywords(검색용 핵심 키워드 0~5개, "최근/최신/요즘/오늘" 같은 시간 표현과 "공지/공지사항/안내/소식" 같은 범용어는 제외)와 recency(특정 주제 없이 최신 목록만 원하면 true)를 추출하라. 질문이 이전 대화를 가리키면 그 주제를 반영하라.\n\n${conversation ? `이전 대화:\n${conversation}\n\n` : ''}마지막 질문: ${query}`,
     config: {
       responseMimeType: 'application/json',
       responseSchema: {
         type: Type.OBJECT,
         properties: {
           keywords: { type: Type.ARRAY, items: { type: Type.STRING } },
+          recency: { type: Type.BOOLEAN },
         },
-        required: ['keywords'],
+        required: ['keywords', 'recency'],
       },
     },
   })
 
-  if (!response.text) return [query]
+  if (!response.text) return { keywords: [query], recency: false }
 
   try {
     const parsed = JSON.parse(response.text)
     const keywords = Array.isArray(parsed.keywords) ? parsed.keywords.map(String) : []
-    return keywords.length > 0 ? keywords : [query]
+    const recency = parsed.recency === true
+    return { keywords: keywords.length > 0 || recency ? keywords : [query], recency }
   } catch {
-    return [query]
+    return { keywords: [query], recency: false }
   }
 }
 
@@ -73,20 +80,40 @@ function relevanceScore(notice: Notice, terms: string[]): number {
   return terms.reduce((score, term) => (haystack.includes(term.toLowerCase()) ? score + term.length : score), 0)
 }
 
-async function findNotices(keywords: string[]): Promise<Notice[]> {
+const NOTICE_COLUMNS = 'id, board_id, board_name, ntt_id, url, title, summary, keywords, author, published_at'
+
+async function findNotices(keywords: string[], recency: boolean): Promise<Notice[]> {
   const terms = keywords.map(sanitizeForFilter).filter(Boolean)
-  if (terms.length === 0) return []
+
+  // 주제 키워드 없이 "최근 공지 있어?"류로만 물으면 주제 필터 없이 최신순으로 바로 반환한다.
+  if (terms.length === 0) {
+    if (!recency) return []
+
+    const { data, error } = await supabase
+      .from('notices')
+      .select(NOTICE_COLUMNS)
+      .order('published_at', { ascending: false })
+      .limit(RESULT_LIMIT)
+
+    if (error) throw new Error(error.message)
+    return data ?? []
+  }
 
   const orFilter = terms.flatMap((term) => [`title.ilike.%${term}%`, `summary.ilike.%${term}%`]).join(',')
 
   const { data, error } = await supabase
     .from('notices')
-    .select('id, board_id, board_name, ntt_id, url, title, summary, keywords, author, published_at')
+    .select(NOTICE_COLUMNS)
     .or(orFilter)
     .order('published_at', { ascending: false })
     .limit(CANDIDATE_LIMIT)
 
   if (error) throw new Error(error.message)
+
+  // 최신순 요청이면 관련성 점수 대신 게시일 순서를 그대로 우선한다 (DB에서 이미 최신순 정렬됨).
+  if (recency) {
+    return (data ?? []).slice(0, RESULT_LIMIT)
+  }
 
   return (data ?? [])
     .map((notice) => ({ notice, score: relevanceScore(notice, terms) }))
@@ -114,7 +141,7 @@ async function synthesizeAnswer(
   const conversation = formatHistory(history)
   const response = await gemini.models.generateContent({
     model: GEMINI_MODEL,
-    contents: `너는 학교 공지사항 검색 챗봇이다. 검색된 공지사항 목록을 근거로 사용자의 마지막 질문에 한국어로 답하라. 목록에 없는 내용은 지어내지 마라. 마크다운 문법(**, *, #, - 등)은 절대 쓰지 말고 순수 텍스트로만 답하라. 반드시 공백 포함 ${ANSWER_TARGET_LENGTH}자 미만으로 답하라. 관련된 공지가 2건 이상이면 절대 나열하지 말고, 대표 제목 1개만 언급한 뒤 "○○ 등 N건이 있습니다" 형식으로만 답하라. (예: "전시 안내 등 3건이 있습니다.")\n\n목록의 공지사항 중 질문과 실제로 관련된 것이 하나도 없다면 found를 false로 하고, 관련 공지사항을 찾지 못했다는 취지로 answer를 작성하라. 관련된 것이 있으면 found를 true로 하라.\n\n${conversation ? `이전 대화:\n${conversation}\n\n` : ''}마지막 질문: ${query}\n\n공지사항 목록:\n${context}`,
+    contents: `공지사항 검색 챗봇이다. 아래 목록만 근거로 마지막 질문에 한국어로, 마크다운 없이 순수 텍스트로, 공백 포함 ${ANSWER_TARGET_LENGTH}자 미만으로 답하라. 목록에 없는 내용은 지어내지 마라. 관련 공지가 2건 이상이면 나열하지 말고 대표 제목 1개 + "등 N건이 있습니다" 형식으로 답하라. 실제로 관련된 공지가 없으면 found를 false로 하고 찾지 못했다는 취지로 답하라.\n\n${conversation ? `이전 대화:\n${conversation}\n\n` : ''}마지막 질문: ${query}\n\n공지사항 목록:\n${context}`,
     config: {
       responseMimeType: 'application/json',
       responseSchema: {
@@ -146,8 +173,8 @@ export async function chatWithNotices(
   history: ChatTurn[],
   query: string,
 ): Promise<{ answer: string; notices: Notice[] }> {
-  const keywords = await extractKeywords(history, query)
-  const notices = await findNotices(keywords)
+  const { keywords, recency } = await analyzeQuery(history, query)
+  const notices = await findNotices(keywords, recency)
   const { answer, found } = await synthesizeAnswer(history, query, notices)
   return { answer, notices: found ? notices : [] }
 }
