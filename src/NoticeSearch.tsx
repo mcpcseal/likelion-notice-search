@@ -43,7 +43,7 @@ function NoticeSearch() {
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
           disabled={loading}
-          placeholder="예: 이번 주 채용 공고 있어?"
+          placeholder="예: 인턴 채용 공고"
         />
         <button
           className="shrink-0 rounded-lg bg-brand px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-500"

@@ -9,6 +9,7 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "crawl": "tsx crawler/src/index.ts",
+    "crawl:backfill": "tsx crawler/src/index.ts --backfill",
     "typecheck:crawler": "tsc -p crawler/tsconfig.json"
   },
   "dependencies": {

@@ -57,11 +57,12 @@ supabase/
 ## 인증/키 관리
 - `.env`(로컬)와 GitHub Actions Secrets(배포)에 다음 값 필요:
   - `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` (RLS를 통과해야 쓰기 가능 — `supabase/schema.sql`에 anon insert/update 정책 추가함. 공개해도 안전하도록 설계된 키라 노출 자체는 문제 없지만, 정책상 이 키를 아는 누구나 notices에 쓸 수 있다는 점은 인지할 것)
-  - `GEMINI_API_KEY` (Google AI Studio 발급 키 — `@google/genai` SDK가 자동으로 읽음. 프론트엔드 챗봇의 `VITE_OPENROUTER_API_KEY`와는 별개 프로바이더/변수)
+  - `GEMINI_API_KEY` (Google AI Studio 발급 키 — `@google/genai` SDK가 자동으로 읽음. 프론트엔드 검색 UI의 `VITE_GEMINI_API_KEY`와는 별개 변수)
 
 ## 실행 방식
 - 로컬: `npm run crawl`
 - 배포: GitHub Actions에서 cron(예: 매일 1회)으로 `npm run crawl` 실행. 워크플로 자체는 이 계획 문서와 별개로 `.github/workflows/crawl.yml`에 구현.
+- **1회성 백필**: `npm run crawl:backfill` (또는 `tsx crawler/src/index.ts --backfill=50`처럼 페이지 수 지정). 평소엔 "이미 저장된 페이지를 만나면 순회 종료"하지만, 백필 모드에서는 이 조기 종료를 끄고 지정한 페이지 수(기본 100)까지 강제로 과거 글을 훑는다.
 
 ## 확장 시 (게시판 추가)
 `boards.json`에 항목 하나만 추가하면 됨:
